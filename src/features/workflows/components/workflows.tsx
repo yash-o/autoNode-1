@@ -1,27 +1,32 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { 
+import { WorkflowIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
   EmptyView,
-  EntityContainer, 
-  EntityHeader, 
-  EntityItem, 
-  EntityList, 
-  EntityPagination, 
+  EntityContainer,
+  EntityHeader,
+  EntityItem,
+  EntityList,
+  EntityPagination,
   EntitySearch,
   ErrorView,
-  LoadingView
+  LoadingView,
 } from "@/components/entity-components";
-import { useCreateWorkflow, useRemoveWorkflow, useSuspenseWorkflows } from "../hooks/use-workflows"
-import { useUpgradeModal } from "@/hooks/use-upgrade-modal";
-import { useManyRiskSummaries } from "@/features/risk/hooks/use-workflow-risk";
+import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBadge } from "@/features/risk/components/risk-badge";
+import { useManyRiskSummaries } from "@/features/risk/hooks/use-workflow-risk";
 import type { RiskLevel } from "@/features/risk/lib/compute-risk";
-import { useRouter } from "next/navigation";
-import { useWorkflowsParams } from "../hooks/use-workflows-params";
-import { useEntitySearch } from "@/hooks/use-entity-search";
 import type { Workflow } from "@/generated/prisma";
-import { WorkflowIcon } from "lucide-react";
+import { useEntitySearch } from "@/hooks/use-entity-search";
+import { useUpgradeModal } from "@/hooks/use-upgrade-modal";
+import {
+  useCreateWorkflow,
+  useRemoveWorkflow,
+  useSuspenseWorkflows,
+} from "../hooks/use-workflows";
+import { useWorkflowsParams } from "../hooks/use-workflows-params";
 
 export const WorkflowsSearch = () => {
   const [params, setParams] = useWorkflowsParams();
@@ -42,7 +47,8 @@ export const WorkflowsSearch = () => {
 export const WorkflowsList = () => {
   const workflows = useSuspenseWorkflows();
   const workflowIds = workflows.data.items.map((workflow) => workflow.id);
-  const { data: riskSummaries } = useManyRiskSummaries(workflowIds);
+  const { data: riskSummaries, isPending: isRiskLoading } =
+    useManyRiskSummaries(workflowIds);
 
   const riskByWorkflowId = new Map(
     (riskSummaries ?? []).map((summary) => [summary.workflowId, summary]),
@@ -56,11 +62,12 @@ export const WorkflowsList = () => {
         <WorkflowItem
           data={workflow}
           risk={riskByWorkflowId.get(workflow.id)}
+          riskLoading={isRiskLoading}
         />
       )}
       emptyView={<WorkflowsEmpty />}
     />
-  )
+  );
 };
 
 export const WorkflowsHeader = ({ disabled }: { disabled?: boolean }) => {
@@ -77,7 +84,7 @@ export const WorkflowsHeader = ({ disabled }: { disabled?: boolean }) => {
         handleError(error);
       },
     });
-  }
+  };
 
   return (
     <>
@@ -109,7 +116,7 @@ export const WorkflowsPagination = () => {
 };
 
 export const WorkflowsContainer = ({
-  children
+  children,
 }: {
   children: React.ReactNode;
 }) => {
@@ -144,7 +151,7 @@ export const WorkflowsEmpty = () => {
       },
       onSuccess: (data) => {
         router.push(`/workflows/${data.id}`);
-      }
+      },
     });
   };
 
@@ -162,6 +169,7 @@ export const WorkflowsEmpty = () => {
 export const WorkflowItem = ({
   data,
   risk,
+  riskLoading = false,
 }: {
   data: Workflow;
   risk?: {
@@ -169,12 +177,13 @@ export const WorkflowItem = ({
     riskScore: number;
     totalRuns: number;
   };
+  riskLoading?: boolean;
 }) => {
   const removeWorkflow = useRemoveWorkflow();
 
   const handleRemove = () => {
     removeWorkflow.mutate({ id: data.id });
-  }
+  };
 
   return (
     <EntityItem
@@ -199,10 +208,12 @@ export const WorkflowItem = ({
             score={risk.riskScore}
             noData={risk.totalRuns === 0}
           />
+        ) : riskLoading ? (
+          <Skeleton className="h-5 w-20" />
         ) : undefined
       }
       onRemove={handleRemove}
       isRemoving={removeWorkflow.isPending}
     />
-  )
-}
+  );
+};
