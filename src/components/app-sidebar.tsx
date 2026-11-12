@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3Icon,
   CreditCardIcon,
   FolderOpenIcon,
   HistoryIcon,
@@ -42,6 +43,11 @@ const menuItems = [
         title: "Executions",
         icon: HistoryIcon,
         url: "/executions",
+      },
+      {
+        title: "Analytics",
+        icon: BarChart3Icon,
+        url: "/analytics",
       },
     ],
   }

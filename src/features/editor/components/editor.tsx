@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
   ReactFlow, 
   applyNodeChanges, 
@@ -26,6 +26,9 @@ import { useSetAtom } from 'jotai';
 import { editorAtom } from '../store/atoms';
 import { NodeType } from '@/generated/prisma';
 import { ExecuteWorkflowButton } from './execute-workflow-button';
+import { EditorInsights } from './editor-insights';
+import { useWorkflowRisk } from '@/features/risk/hooks/use-workflow-risk';
+import { nodeRiskAtom } from '@/features/risk/store/risk-atoms';
 
 export const EditorLoading = () => {
   return <LoadingView message="Loading editor..." />;
@@ -41,6 +44,22 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
   } = useSuspenseWorkflow(workflowId);
 
   const setEditor = useSetAtom(editorAtom);
+  const setNodeRisk = useSetAtom(nodeRiskAtom);
+
+  const { data: riskReport } = useWorkflowRisk(workflowId);
+
+  useEffect(() => {
+    if (!riskReport) return;
+
+    setNodeRisk(
+      Object.fromEntries(
+        riskReport.nodeRisks.map((nodeRisk) => [
+          nodeRisk.nodeId,
+          nodeRisk.riskScore,
+        ]),
+      ),
+    );
+  }, [riskReport, setNodeRisk]);
 
   const [nodes, setNodes] = useState<Node[]>(workflow.nodes);
   const [edges, setEdges] = useState<Edge[]>(workflow.edges);
@@ -83,7 +102,10 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         <Controls />
         <MiniMap />
         <Panel position="top-right">
-          <AddNodeButton />
+          <div className="flex flex-col items-end gap-2">
+            <AddNodeButton />
+            <EditorInsights workflowId={workflowId} />
+          </div>
         </Panel>
         {hasManualTrigger && (
           <Panel position="bottom-center">

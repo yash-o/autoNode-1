@@ -184,4 +184,34 @@ model Execution {
   inngestEventId String @unique
 
   output Json?
+
+  nodeRecords NodeExecutionRecord[]
+
+  @@index([workflowId])
+}
+
+enum NodeExecutionStatus {
+  SUCCESS
+  FAILED
+}
+
+model NodeExecutionRecord {
+  id String @id @default(cuid())
+
+  executionId String
+  execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  workflowId String
+  nodeId String
+  nodeType NodeType
+  status NodeExecutionStatus
+  error String? @db.Text
+
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+
+  @@unique([executionId, nodeId])
+  @@index([workflowId, nodeType])
+  @@index([executionId])
+  @@map("node_execution_record")
 }

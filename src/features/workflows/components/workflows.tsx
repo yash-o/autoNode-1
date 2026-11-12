@@ -14,6 +14,9 @@ import {
 } from "@/components/entity-components";
 import { useCreateWorkflow, useRemoveWorkflow, useSuspenseWorkflows } from "../hooks/use-workflows"
 import { useUpgradeModal } from "@/hooks/use-upgrade-modal";
+import { useManyRiskSummaries } from "@/features/risk/hooks/use-workflow-risk";
+import { RiskBadge } from "@/features/risk/components/risk-badge";
+import type { RiskLevel } from "@/features/risk/lib/compute-risk";
 import { useRouter } from "next/navigation";
 import { useWorkflowsParams } from "../hooks/use-workflows-params";
 import { useEntitySearch } from "@/hooks/use-entity-search";
@@ -38,12 +41,23 @@ export const WorkflowsSearch = () => {
 
 export const WorkflowsList = () => {
   const workflows = useSuspenseWorkflows();
+  const workflowIds = workflows.data.items.map((workflow) => workflow.id);
+  const { data: riskSummaries } = useManyRiskSummaries(workflowIds);
+
+  const riskByWorkflowId = new Map(
+    (riskSummaries ?? []).map((summary) => [summary.workflowId, summary]),
+  );
 
   return (
     <EntityList
       items={workflows.data.items}
       getKey={(workflow) => workflow.id}
-      renderItem={(workflow) => <WorkflowItem data={workflow} />}
+      renderItem={(workflow) => (
+        <WorkflowItem
+          data={workflow}
+          risk={riskByWorkflowId.get(workflow.id)}
+        />
+      )}
       emptyView={<WorkflowsEmpty />}
     />
   )
@@ -147,8 +161,14 @@ export const WorkflowsEmpty = () => {
 
 export const WorkflowItem = ({
   data,
-}: { 
-  data: Workflow
+  risk,
+}: {
+  data: Workflow;
+  risk?: {
+    riskLevel: RiskLevel;
+    riskScore: number;
+    totalRuns: number;
+  };
 }) => {
   const removeWorkflow = useRemoveWorkflow();
 
@@ -171,6 +191,15 @@ export const WorkflowItem = ({
         <div className="size-8 flex items-center justify-center">
           <WorkflowIcon className="size-5 text-muted-foreground" />
         </div>
+      }
+      actions={
+        risk ? (
+          <RiskBadge
+            level={risk.riskLevel}
+            score={risk.riskScore}
+            noData={risk.totalRuns === 0}
+          />
+        ) : undefined
       }
       onRemove={handleRemove}
       isRemoving={removeWorkflow.isPending}

@@ -8,6 +8,7 @@ import { BaseNode, BaseNodeContent } from "@/components/react-flow/base-node";
 import { BaseHandle } from "@/components/react-flow/base-handle";
 import { WorkflowNode } from "@/components/workflow-node";
 import { type NodeStatus, NodeStatusIndicator } from "@/components/react-flow/node-status-indicator";
+import { NodeRiskOverlay } from "@/features/risk/components/node-risk-overlay";
 
 interface BaseExecutionNodeProps extends NodeProps {
   icon: LucideIcon | string;
@@ -75,6 +76,7 @@ export const BaseExecutionNode = memo(
                 position={Position.Right}
               />
             </BaseNodeContent>
+            <NodeRiskOverlay nodeId={id} />
           </BaseNode>
         </NodeStatusIndicator>
       </WorkflowNode>

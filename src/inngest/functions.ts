@@ -59,7 +59,7 @@ export const executeWorkflow = inngest.createFunction(
       throw new NonRetriableError("Event ID or workflow ID is missing");
     }
 
-    await step.run("create-execution", async () => {
+    const execution = await step.run("create-execution", async () => {
       return prisma.execution.create({
         data: {
           workflowId,
@@ -93,6 +93,39 @@ export const executeWorkflow = inngest.createFunction(
 
       return workflow.userId;
     });
+
+    // Persist the outcome of every node attempt. Used by the analytics and
+    // predictive risk features. Upsert keeps retries idempotent.
+    const recordNodeOutcome = async (
+      node: { id: string; type: NodeType },
+      status: "SUCCESS" | "FAILED",
+      error?: string,
+    ) => {
+      await step.run(`record-node-${status}-${node.id}`, async () => {
+        return prisma.nodeExecutionRecord.upsert({
+          where: {
+            executionId_nodeId: {
+              executionId: execution.id,
+              nodeId: node.id,
+            },
+          },
+          create: {
+            executionId: execution.id,
+            workflowId,
+            nodeId: node.id,
+            nodeType: node.type,
+            status,
+            error,
+            completedAt: new Date(),
+          },
+          update: {
+            status,
+            error,
+            completedAt: new Date(),
+          },
+        });
+      });
+    };
 
     // Initialize context with any initial data from the trigger
     let context = event.data.initialData || {};
@@ -129,14 +162,24 @@ export const executeWorkflow = inngest.createFunction(
         if (!node) return;
 
         const executor = getExecutor(node.type as NodeType);
-        context = await executor({
-          data: node.data as Record<string, unknown>,
-          nodeId: node.id,
-          userId,
-          context,
-          step,
-          publish,
-        });
+        try {
+          context = await executor({
+            data: node.data as Record<string, unknown>,
+            nodeId: node.id,
+            userId,
+            context,
+            step,
+            publish,
+          });
+          await recordNodeOutcome(node, "SUCCESS");
+        } catch (error) {
+          await recordNodeOutcome(
+            node,
+            "FAILED",
+            error instanceof Error ? error.message : String(error),
+          );
+          throw error;
+        }
 
         // If this was a Filter node that didn't pass, stop
         if (context.__filtered) {
@@ -170,14 +213,24 @@ export const executeWorkflow = inngest.createFunction(
       // Simple linear execution for workflows without Router nodes
       for (const node of sortedNodes) {
         const executor = getExecutor(node.type as NodeType);
-        context = await executor({
-          data: node.data as Record<string, unknown>,
-          nodeId: node.id,
-          userId,
-          context,
-          step,
-          publish,
-        });
+        try {
+          context = await executor({
+            data: node.data as Record<string, unknown>,
+            nodeId: node.id,
+            userId,
+            context,
+            step,
+            publish,
+          });
+          await recordNodeOutcome(node, "SUCCESS");
+        } catch (error) {
+          await recordNodeOutcome(
+            node,
+            "FAILED",
+            error instanceof Error ? error.message : String(error),
+          );
+          throw error;
+        }
 
         // If a Filter node stops the workflow, break out
         if (context.__filtered) {
