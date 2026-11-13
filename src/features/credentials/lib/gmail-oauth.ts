@@ -143,6 +143,16 @@ type GoogleTokenResponse = {
   token_type: string;
 };
 
+export class GmailOAuthError extends Error {
+  code: string;
+
+  constructor(code: string, detail: string) {
+    super(`Google token exchange failed: ${code} ${detail}`);
+    this.name = "GmailOAuthError";
+    this.code = code;
+  }
+}
+
 const requestToken = async (body: URLSearchParams) => {
   const { clientId, clientSecret } = getGmailOAuthConfig();
   body.set("client_id", clientId);
@@ -156,9 +166,16 @@ const requestToken = async (body: URLSearchParams) => {
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(
-      `Google token exchange failed: ${response.status} ${detail}`,
-    );
+    let code = `http_${response.status}`;
+
+    try {
+      const parsed = JSON.parse(detail) as { error?: string };
+      code = parsed.error || code;
+    } catch {
+      // Non-JSON error body; keep the status-based code.
+    }
+
+    throw new GmailOAuthError(code, detail);
   }
 
   return (await response.json()) as GoogleTokenResponse;

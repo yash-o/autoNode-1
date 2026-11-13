@@ -5,6 +5,7 @@ import { NonRetriableError } from "inngest";
 import ky, { HTTPError } from "ky";
 import {
   type GmailCredentialPayload,
+  GmailOAuthError,
   refreshGmailAccessToken,
 } from "@/features/credentials/lib/gmail-oauth";
 import type { NodeExecutor } from "@/features/executions/types";
@@ -197,11 +198,23 @@ export const gmailExecutor: NodeExecutor<GmailData> = async ({
         const token = await refreshGmailAccessToken(payload.refreshToken);
         accessToken = token.access_token;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const code =
+          error instanceof GmailOAuthError
+            ? error.code
+            : error instanceof Error
+              ? error.message
+              : String(error);
 
-        if (message.includes("invalid_grant")) {
+        // Retrying these cannot succeed — the credential needs attention.
+        if (code === "invalid_grant") {
           throw new NonRetriableError(
             "Gmail node: Authorization was revoked or expired. Reconnect your Google account.",
+          );
+        }
+
+        if (code === "unauthorized_client" || code === "invalid_client") {
+          throw new NonRetriableError(
+            "Gmail node: This credential was issued to a different OAuth client than the one this deployment is configured with. Reconnect the Google account from this deployment, or make GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET match the environment that connected it.",
           );
         }
 

@@ -4,6 +4,7 @@ import {
   exchangeGmailCode,
   fetchGmailAccountEmail,
   type GmailCredentialPayload,
+  GmailOAuthError,
   getAppUrl,
   verifyOAuthState,
 } from "@/features/credentials/lib/gmail-oauth";
@@ -93,6 +94,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/credentials", appUrl));
   } catch (callbackError) {
     console.error("Gmail callback error:", callbackError);
+
+    if (callbackError instanceof GmailOAuthError) {
+      return failure(appUrl, callbackError.code, callbackError.message);
+    }
+
     return failure(appUrl, "exchange_failed");
   }
 }
