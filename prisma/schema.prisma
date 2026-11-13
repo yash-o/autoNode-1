@@ -94,6 +94,7 @@ enum CredentialType {
   OPENAI
   ANTHROPIC
   GEMINI
+  GMAIL
 }
 
 model Workflow {

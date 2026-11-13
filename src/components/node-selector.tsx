@@ -90,8 +90,8 @@ const executionNodes: NodeTypeOption[] = [
   },
   {
     type: NodeType.GMAIL,
-    label: "Email (Resend)",
-    description: "Send an email via Resend API",
+    label: "Email (Gmail)",
+    description: "Send an email from a connected Gmail account",
     icon: "/logos/gmail.svg",
   },
   {

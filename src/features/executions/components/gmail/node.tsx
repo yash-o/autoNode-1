@@ -10,6 +10,8 @@ import { GMAIL_CHANNEL_NAME } from "@/inngest/channels/gmail";
 import { MailIcon } from "lucide-react";
 
 type GmailNodeData = {
+  credentialId?: string;
+  fromName?: string;
   to?: string;
   subject?: string;
   body?: string;
@@ -62,7 +64,7 @@ export const GmailNode = memo((props: NodeProps<GmailNodeType>) => {
         {...props}
         id={props.id}
         icon="/logos/gmail.svg"
-        name="Email"
+        name="Email (Gmail)"
         status={nodeStatus}
         description={description}
         onSettings={handleOpenSettings}

@@ -1,5 +1,11 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import Link from "next/link";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import z from "zod";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -18,22 +24,27 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import z from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { useCredentialsByType } from "@/features/credentials/hooks/use-credentials";
+import { CredentialType } from "@/generated/prisma";
 
 const formSchema = z.object({
   variableName: z
     .string()
     .min(1, { message: "Variable name is required" })
     .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/, {
-      message: "Variable name must start with a letter or underscore and contain only letters, numbers, and underscores",
+      message:
+        "Variable name must start with a letter or underscore and contain only letters, numbers, and underscores",
     }),
-  apiKey: z.string().min(1, "Resend API Key is required"),
-  from: z.string().optional(),
+  credentialId: z.string().min(1, "Gmail credential is required"),
+  fromName: z.string().optional(),
   to: z.string().min(1, "Recipient email is required"),
   subject: z.string().min(1, "Subject is required"),
   body: z.string().optional(),
@@ -46,7 +57,7 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: z.infer<typeof formSchema>) => void;
   defaultValues?: Partial<GmailFormValues>;
-};
+}
 
 export const GmailDialog = ({
   open,
@@ -54,12 +65,15 @@ export const GmailDialog = ({
   onSubmit,
   defaultValues = {},
 }: Props) => {
+  const { data: credentials, isLoading: isLoadingCredentials } =
+    useCredentialsByType(CredentialType.GMAIL);
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       variableName: defaultValues.variableName || "",
-      apiKey: defaultValues.apiKey || "",
-      from: defaultValues.from || "",
+      credentialId: defaultValues.credentialId || "",
+      fromName: defaultValues.fromName || "",
       to: defaultValues.to || "",
       subject: defaultValues.subject || "",
       body: defaultValues.body || "",
@@ -71,8 +85,8 @@ export const GmailDialog = ({
     if (open) {
       form.reset({
         variableName: defaultValues.variableName || "",
-        apiKey: defaultValues.apiKey || "",
-        from: defaultValues.from || "",
+        credentialId: defaultValues.credentialId || "",
+        fromName: defaultValues.fromName || "",
         to: defaultValues.to || "",
         subject: defaultValues.subject || "",
         body: defaultValues.body || "",
@@ -81,6 +95,7 @@ export const GmailDialog = ({
   }, [open, defaultValues, form]);
 
   const watchVariableName = form.watch("variableName") || "myEmail";
+  const hasGmailCredentials = (credentials?.length ?? 0) > 0;
 
   const handleSubmit = (values: z.infer<typeof formSchema>) => {
     onSubmit(values);
@@ -91,9 +106,9 @@ export const GmailDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Email Configuration</DialogTitle>
+          <DialogTitle>Gmail Configuration</DialogTitle>
           <DialogDescription>
-            Send an email using the Resend API. Get your API key from resend.com
+            Send an email from a connected Gmail account.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -108,14 +123,11 @@ export const GmailDialog = ({
                 <FormItem>
                   <FormLabel>Variable Name</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="myEmail"
-                      {...field}
-                    />
+                    <Input placeholder="myEmail" {...field} />
                   </FormControl>
                   <FormDescription>
                     Use this name to reference the result in other nodes:{" "}
-                    {`{{${watchVariableName}.emailId}}`}
+                    {`{{${watchVariableName}.messageId}}`}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -124,20 +136,43 @@ export const GmailDialog = ({
 
             <FormField
               control={form.control}
-              name="apiKey"
+              name="credentialId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Resend API Key</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      placeholder="re_..."
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Get your API key from resend.com/api-keys
-                  </FormDescription>
+                  <FormLabel>Gmail Account</FormLabel>
+                  {hasGmailCredentials ? (
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a connected account" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {credentials?.map((credential) => (
+                          <SelectItem key={credential.id} value={credential.id}>
+                            {credential.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                      {isLoadingCredentials
+                        ? "Loading accounts..."
+                        : "No Gmail account connected yet. "}
+                      {!isLoadingCredentials && (
+                        <Link
+                          href="/credentials/new"
+                          className="underline underline-offset-2"
+                        >
+                          Connect a Google account
+                        </Link>
+                      )}
+                    </div>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -145,18 +180,16 @@ export const GmailDialog = ({
 
             <FormField
               control={form.control}
-              name="from"
+              name="fromName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>From (Optional)</FormLabel>
+                  <FormLabel>Sender Name (Optional)</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="AutoNode <onboarding@resend.dev>"
-                      {...field}
-                    />
+                    <Input placeholder="AutoNode Notifications" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Sender address. Defaults to Resend's test address if empty.
+                    Display name shown in the recipient's inbox. The address is
+                    always the connected Gmail account.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -177,7 +210,8 @@ export const GmailDialog = ({
                     />
                   </FormControl>
                   <FormDescription>
-                    Recipient email. Supports {"{{variables}}"}. Separate multiple with commas.
+                    Recipient email. Supports {"{{variables}}"}. Separate
+                    multiple with commas.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -213,13 +247,16 @@ export const GmailDialog = ({
                   <FormLabel>Body (HTML)</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder={"<h1>Hello!</h1>\n<p>New submission: {{json googleForm.responses}}</p>"}
+                      placeholder={
+                        "<h1>Hello!</h1>\n<p>New submission: {{json googleForm.responses}}</p>"
+                      }
                       className="min-h-[120px] font-mono text-sm"
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    HTML email body. Supports {"{{variables}}"} and {"{{json variable}}"} for objects.
+                    HTML email body. Supports {"{{variables}}"} and{" "}
+                    {"{{json variable}}"} for objects.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -227,7 +264,9 @@ export const GmailDialog = ({
             />
 
             <DialogFooter className="mt-4">
-              <Button type="submit">Save</Button>
+              <Button type="submit" disabled={!hasGmailCredentials}>
+                Save
+              </Button>
             </DialogFooter>
           </form>
         </Form>
