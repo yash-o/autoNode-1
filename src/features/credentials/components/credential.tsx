@@ -85,7 +85,7 @@ const gmailErrorMessages: Record<string, string> = {
   exchange_failed:
     "Could not exchange the authorization code with Google. Try again.",
   redirect_uri_mismatch:
-    "The redirect URI does not match Google Cloud. It must be exactly http://localhost:3000/api/credentials/gmail/callback on the OAuth client.",
+    "The redirect URI does not match Google Cloud. Add this deployment's /api/credentials/gmail/callback URL (exact scheme and host) to the OAuth client's Authorized redirect URIs.",
   invalid_scope: "Google rejected the requested Gmail scope.",
   invalid_client:
     "Google rejected the OAuth client id. Check GOOGLE_CLIENT_ID / GMAIL_CLIENT_ID.",

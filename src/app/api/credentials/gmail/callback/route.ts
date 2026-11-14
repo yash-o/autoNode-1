@@ -26,7 +26,7 @@ const failure = (appUrl: string, reason: string, detail?: string) => {
 };
 
 export async function GET(request: NextRequest) {
-  const appUrl = getAppUrl();
+  const appUrl = getAppUrl(request);
   const url = new URL(request.url);
 
   const error = url.searchParams.get("error");
@@ -47,11 +47,13 @@ export async function GET(request: NextRequest) {
     return failure(appUrl, "invalid_request");
   }
 
-  const userId = verifyOAuthState(state);
+  const oauthState = verifyOAuthState(state);
 
-  if (!userId) {
+  if (!oauthState) {
     return failure(appUrl, "invalid_state");
   }
+
+  const { userId, redirectUri } = oauthState;
 
   // The signed state carries the user id, but the browser must still be that
   // user — otherwise a leaked state could bind an account to someone else.
@@ -64,7 +66,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const tokens = await exchangeGmailCode(code);
+    // Must be byte-identical to the URI sent to Google at authorization time.
+    const tokens = await exchangeGmailCode(code, redirectUri);
 
     if (!tokens.refresh_token) {
       return failure(appUrl, "missing_refresh_token");

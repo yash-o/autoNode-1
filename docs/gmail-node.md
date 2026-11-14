@@ -30,9 +30,9 @@ The node never requests read access, so AutoNode cannot see your inbox.
      production requires Google verification.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**
    - Type: **Web application**.
-   - **Authorised redirect URI**: `<NEXT_PUBLIC_APP_URL>/api/credentials/gmail/callback`
-     (exactly, no trailing slash). For local dev with the ngrok URL already in
-     `.env`, that is:
+   - **Authorised redirect URI**: `<app origin>/api/credentials/gmail/callback`
+     (exactly, no trailing slash). Add one entry per environment you use. For
+     local dev with the ngrok URL already in `.env`, that is:
      `https://sindy-chocker-unsimultaneously.ngrok-free.dev/api/credentials/gmail/callback`
    - If you also use Google sign-in, either add this redirect URI to that same
      client or create a second client just for Gmail.
@@ -51,9 +51,24 @@ GMAIL_CLIENT_SECRET="..."
 
 `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET` take precedence when present.
 
-The redirect URI is derived from `NEXT_PUBLIC_APP_URL`. **It must match the URI
-registered in Google Cloud exactly** — if you browse the app on `localhost:3000`
-but `NEXT_PUBLIC_APP_URL` points at ngrok, Google will send you back to ngrok.
+The redirect URI is `<app origin>/api/credentials/gmail/callback`, where the
+origin comes from `APP_URL` (or `NEXT_PUBLIC_APP_URL`) when set, otherwise from
+the host the request actually arrived on. A `localhost` value is ignored when
+the request came in on a public host, so production works even if the env var is
+missing there.
+
+**It must match a URI registered in Google Cloud exactly** (scheme, host, port,
+path, no trailing slash). A single OAuth client can list several, e.g.:
+
+```
+http://localhost:3000/api/credentials/gmail/callback
+https://your-production-domain.com/api/credentials/gmail/callback
+```
+
+Unauthorized redirect URIs are rejected by Google *before* the callback runs, so
+a `redirect_uri_mismatch` error page means the Origin/host is missing from that
+list. The exact URI the deployment sent is logged as
+`Gmail OAuth redirect URI:` on the server right before the redirect.
 
 ## 3. Use the node
 

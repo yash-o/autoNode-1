@@ -16,25 +16,89 @@ export const GMAIL_SCOPES = [
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-export const getAppUrl = () =>
-  (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(
-    /\/$/,
-    "",
-  );
+const normalizeUrl = (url: string) => url.replace(/\/+$/, "");
 
-export const getGmailRedirectUri = () =>
-  `${getAppUrl()}/api/credentials/gmail/callback`;
+const isLocalhostUrl = (url: string) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(url);
+
+const isLocalHostname = (host: string) =>
+  /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+
+/**
+ * The origin the browser is actually on, taken from the proxy-aware headers
+ * Next.js exposes. Falls back to the request URL when no host header is set.
+ */
+const getOriginFromRequest = (request: Request) => {
+  const host =
+    request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
+    request.headers.get("host");
+
+  if (host) {
+    const proto =
+      request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
+      (isLocalHostname(host) ? "http" : "https");
+
+    return `${proto}://${host}`;
+  }
+
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * App origin used for OAuth redirects. A configured URL wins, except that a
+ * localhost value is ignored when the request came in on a public host — that
+ * combination is what makes Google return `redirect_uri_mismatch` in production.
+ *
+ * `APP_URL` (server-only, runtime) is preferred over `NEXT_PUBLIC_APP_URL`,
+ * which Next.js inlines at build time.
+ */
+export const getAppUrl = (request?: Request) => {
+  const configured =
+    process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || undefined;
+
+  if (configured) {
+    const normalized = normalizeUrl(configured);
+
+    if (!request || !isLocalhostUrl(normalized)) {
+      return normalized;
+    }
+
+    const origin = getOriginFromRequest(request);
+
+    if (!origin || isLocalhostUrl(origin)) {
+      return normalized;
+    }
+
+    return normalizeUrl(origin);
+  }
+
+  if (request) {
+    const origin = getOriginFromRequest(request);
+
+    if (origin) {
+      return normalizeUrl(origin);
+    }
+  }
+
+  return "http://localhost:3000";
+};
+
+export const getGmailRedirectUri = (appUrl = getAppUrl()) =>
+  `${normalizeUrl(appUrl)}/api/credentials/gmail/callback`;
 
 type GmailOAuthConfig = {
   clientId: string;
   clientSecret: string;
-  redirectUri: string;
 };
 
 /**
  * Reuses the Google OAuth client already configured for login when dedicated
- * Gmail credentials are not provided. The redirect URI below must be listed as
- * an authorised redirect URI on that client.
+ * Gmail credentials are not provided. The redirect URI must be listed as an
+ * authorised redirect URI on that client.
  */
 export const getGmailOAuthConfig = (): GmailOAuthConfig => {
   const clientId = process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
@@ -50,7 +114,6 @@ export const getGmailOAuthConfig = (): GmailOAuthConfig => {
   return {
     clientId,
     clientSecret,
-    redirectUri: getGmailRedirectUri(),
   };
 };
 
@@ -69,14 +132,22 @@ const getStateSecret = () => {
 const sign = (payload: string) =>
   createHmac("sha256", getStateSecret()).update(payload).digest("base64url");
 
+export type OAuthState = {
+  userId: string;
+  redirectUri: string;
+};
+
 /**
- * The state is stateless: it carries the user id, an expiry and a nonce, and is
- * signed so the callback can trust it without a DB round-trip.
+ * The state is stateless: it carries the user id, the redirect URI, an expiry
+ * and a nonce, and is signed so the callback can trust it without a DB
+ * round-trip. Carrying the redirect URI guarantees the token exchange uses
+ * exactly the value Google saw at authorization time.
  */
-export const createOAuthState = (userId: string) => {
+export const createOAuthState = (userId: string, redirectUri: string) => {
   const payload = Buffer.from(
     JSON.stringify({
       userId,
+      redirectUri,
       exp: Date.now() + STATE_TTL_MS,
       nonce: randomBytes(16).toString("hex"),
     }),
@@ -85,7 +156,7 @@ export const createOAuthState = (userId: string) => {
   return `${payload}.${sign(payload)}`;
 };
 
-export const verifyOAuthState = (state: string): string | null => {
+export const verifyOAuthState = (state: string): OAuthState | null => {
   const [payload, signature] = state.split(".");
 
   if (!payload || !signature) {
@@ -106,20 +177,25 @@ export const verifyOAuthState = (state: string): string | null => {
   try {
     const data = JSON.parse(
       Buffer.from(payload, "base64url").toString("utf8"),
-    ) as { userId?: string; exp?: number };
+    ) as { userId?: string; redirectUri?: string; exp?: number };
 
-    if (!data.userId || !data.exp || data.exp < Date.now()) {
+    if (
+      !data.userId ||
+      !data.redirectUri ||
+      !data.exp ||
+      data.exp < Date.now()
+    ) {
       return null;
     }
 
-    return data.userId;
+    return { userId: data.userId, redirectUri: data.redirectUri };
   } catch {
     return null;
   }
 };
 
-export const buildGmailAuthUrl = (state: string) => {
-  const { clientId, redirectUri } = getGmailOAuthConfig();
+export const buildGmailAuthUrl = (state: string, redirectUri: string) => {
+  const { clientId } = getGmailOAuthConfig();
   const url = new URL(GOOGLE_AUTH_URL);
 
   url.searchParams.set("client_id", clientId);
@@ -181,17 +257,14 @@ const requestToken = async (body: URLSearchParams) => {
   return (await response.json()) as GoogleTokenResponse;
 };
 
-export const exchangeGmailCode = (code: string) => {
-  const { redirectUri } = getGmailOAuthConfig();
-
-  return requestToken(
+export const exchangeGmailCode = (code: string, redirectUri: string) =>
+  requestToken(
     new URLSearchParams({
       code,
       grant_type: "authorization_code",
       redirect_uri: redirectUri,
     }),
   );
-};
 
 export const refreshGmailAccessToken = (refreshToken: string) =>
   requestToken(
